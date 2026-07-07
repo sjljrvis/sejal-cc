@@ -1,0 +1,36 @@
+---
+trigger: always_on
+---
+
+# 1. Project Identity: Supervity AI Employee — Command Center
+**Platform:** Supervity AI Command Center
+**Mission:** An AI-first operational platform for intelligent business process management, insight generation, and workflow automation with human-in-the-loop oversight. Each project (Employee) built on this platform targets a specific business domain.
+**Design Philosophy:** "Where Intelligence Meets Human." — Build Command Centers, not just applications. The AI is a primary actor; humans are strategic overseers.
+
+# 2. The Three Pillars (from CC Playbook)
+Every feature must fit within one of these pillars:
+- **Dashboard (The "Eyes"):** Strategic overview with role-based, actionable insights.
+- **Workbench (The "Hands"):** Tactical, record-focused workspace for handling AI exceptions and providing feedback.
+- **AI Engine & Policies (The "Brain"):** Configurable rules that govern the AI's behavior, viewable and manageable by admins.
+
+# 3. STRICT BOUNDARY: Internal Enterprise Tool
+This is an **internal enterprise platform**, not a consumer-facing website.
+- **NO** public landing pages, marketing copy, or SEO-driven content.
+- **NO** brochure aesthetics, hero sections, or promotional CTAs.
+- The UI should feel like a professional **operational command center** — data-dense, functional, and elegant.
+
+# 4. Brand Identity: The Ampersand System
+Always follow `docs/brand-identity.md` and `docs/design-system-template.md` for full details.
+- **Visual Tone:** Sophisticated, Deep, Geometric, Fluid.
+- **Key Motif:** The Ampersand (`&`).
+- **Backgrounds:** Deep Navy (`#04060A`) with Mesh Gradients.
+- **Headings:** `font-display` (Funnel Display). **Body:** `font-sans` (Geologica).
+
+# 5. Global Color Tokens (Tailwind)
+Never use raw hex values in components. Use semantic Tailwind tokens:
+- **Background:** `bg-background` (Deep Black `#04060A`), `bg-primary` (Navy `#141A42`)
+- **Foreground:** `text-foreground` (Light Grey `#E7E7E7`)
+- **Accent:** `text-brand-cornflower` (`#8AA2DF`), `bg-brand-purple` (`#535EA4`)
+- **Cards:** `bg-card` (Glassmorphic Navy)
+- **Muted:** `text-muted-foreground` (`#848EAA`)
+- **Gradients:** `bg-brand-gradient` (Navy → Purple), `bg-glass-gradient` (subtle card fade)

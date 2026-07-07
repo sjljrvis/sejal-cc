@@ -1,0 +1,65 @@
+---
+description: Step-by-step implementation strategy, pre-commit validation, git discipline (no push), Docker awareness, migration discipline
+alwaysApply: true
+---
+
+<!-- ⚠ MIRROR — canonical: .agents/rules/04-agent-execution-workflow.md. Edit canonical, then run scripts/sync-rules.sh. -->
+
+
+# 1. Step-by-Step Implementation Strategy
+Do not output massive code dumps. Work incrementally:
+1. **Plan:** Define data structures, dependencies, and API contracts internally.
+2. **Backend First:** Models (`/app/models/`) → Schemas (`/app/schemas/`) → Services (`/app/services/`) → Routers (`/app/routers/`).
+3. **Frontend:** Hooks/Context → UI Components → Pages that integrate them.
+4. **Verify:** Lint, build, and test via Docker before committing.
+
+# 2. Pre-Commit Validation (MANDATORY)
+Before writing any `git commit`, you MUST run the following to ensure nothing is broken:
+
+**Frontend:**
+```bash
+cd frontend && npm run lint && npm run build
+```
+`npm run build` runs the TypeScript compiler — a green build means no type errors. Do not skip it for "small" changes; type errors love hiding in trivial diffs.
+
+**Backend:**
+```bash
+make lint       # ruff (and mypy if configured) — fix all errors and obvious warnings
+make test-be    # full pytest suite for affected modules
+```
+A bare `python -m py_compile` is **not** sufficient — it only catches syntax errors, not type, import, or behavioral issues.
+
+**Migrations:** If you changed any model in `app/models/`, you MUST also have run `make migrate-create` and `make migrate-up` and verified the chain with `make migrate-history` before committing. See §6.
+
+If any check fails, read the errors and fix them before committing. **NEVER leave the codebase in a broken state.**
+
+# 3. Git Commit Discipline
+You are permitted to edit files and commit locally. You are **NEVER** permitted to run `git push`. Pushing is a human decision.
+Commits must be atomic using standard prefixes:
+- `feat:` (New feature)
+- `fix:` (Bug fix)
+- `refactor:` (Code cleanup without changing functionality)
+- `style:` (CSS/UI updates)
+- `docs:` (Updating Memory Bank or documentation)
+
+# 4. No Dead Code
+Before committing, you must remove:
+- `console.log` and `print()` statements.
+- Unused imports or variables.
+- Temporary debug comments.
+
+# 5. Docker & Local Dev Awareness
+- **Start all services:** `make up`
+- **Stop all services:** `make down`
+- **View logs:** `make logs-be` (backend), `make logs-fe` (frontend)
+- **Restart individual:** `docker compose restart backend` or `docker compose restart frontend`
+- **Reset database:** `make reset-db` (clears and re-seeds)
+- Backend hot-reloads in dev (`APP_ENV=development`). Frontend needs `docker compose build frontend` if `FRONTEND_TARGET=prod`.
+
+# 6. Database Migration Discipline
+Any change to SQLAlchemy models (`/app/models/`) MUST be accompanied by an Alembic migration:
+1. `make migrate-create MSG='describe_the_change'` — auto-generate migration.
+2. Review the generated file in `alembic/versions/`.
+3. `make migrate-up` — apply the migration.
+4. `make migrate-history` — verify migration chain is correct.
+Never edit models without creating a migration. Never commit without applying it.

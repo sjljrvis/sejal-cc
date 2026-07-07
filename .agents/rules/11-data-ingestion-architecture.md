@@ -1,0 +1,134 @@
+---
+trigger: model_decision
+description: Reference when implementing data ingestion, creating adapters for external data sources (CSV, JSON, PDF, API), or transitioning from POC to production data
+---
+
+# 1. Core Principle: Unified Ingestion
+All external data enters the system through **Ingestion Adapters**. The adapter normalizes data from ANY source into the internal data model and pushes it through the standard service layer.
+
+**The business logic NEVER knows where the data came from.** It only works with the internal data model.
+
+```
+[External Source] → [Ingestion Adapter] → [Internal Service Layer] → [Database]
+                                                    ↑
+                                          AI Policies evaluate here
+```
+
+# 2. Why This Matters
+- **POC uses CSV/JSON → Production uses SAP/ServiceNow/Workday.**
+- If business logic reads CSV directly, switching to production means rewriting everything.
+- With unified ingestion, switching = creating a new adapter + changing config. **Zero business logic changes.**
+
+# 3. Supported Source Types
+
+| Source Type | POC Example | Production Example |
+|-------------|-------------|-------------------|
+| Flat File | CSV upload, Excel upload | Scheduled SFTP drops |
+| Structured Data | JSON flat file, YAML | REST API response |
+| Documents | PDF, email attachment | Document management system |
+| API | Mock API, Postman collection | SAP, ServiceNow, Workday |
+| Webhook | Local test webhook | Production event stream |
+
+# 4. Ingestion Adapter Interface
+All adapters in `app/services/ingestion/adapters/` MUST implement this interface:
+
+```python
+class IngestionAdapter(Protocol):
+    """All data enters the system through this interface."""
+    
+    adapter_name: str  # e.g., "csv", "sap", "servicenow"
+    
+    async def parse(self, raw_data: Any) -> list[dict]:
+        """Parse raw source data into normalized records."""
+        ...
+    
+    async def validate(self, records: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Validate records. Returns (valid_records, invalid_records)."""
+        ...
+    
+    async def ingest(self, records: list[dict]) -> IngestionResult:
+        """Push validated records into the system via the internal service layer."""
+        ...
+    
+    def health_check(self) -> HealthStatus:
+        """Report adapter health for monitoring."""
+        ...
+```
+
+# 5. Key Rules
+
+### 5.1 Adapters Call Services, Not the Database
+Adapters MUST use the internal service layer (same methods the API uses) to create records. Never write to the DB directly from an adapter.
+
+### 5.2 Schema Mapping
+Each adapter includes a `field_mapping` that translates source field names to internal schema:
+```python
+# SAP field mapping example
+FIELD_MAPPING = {
+    "NETWR": "amount",          # SAP net value → internal amount
+    "LIFNR": "vendor_id",       # SAP vendor number → internal vendor_id
+    "BUKRS": "company_code",    # SAP company code → internal company_code
+    "BUDAT": "posting_date",    # SAP posting date → internal posting_date
+}
+```
+For POC adapters (CSV/JSON), the mapping translates column headers to internal field names.
+
+### 5.3 Config-Driven Adapter Selection
+The active adapter is determined by environment variable or settings:
+```bash
+DATA_SOURCE=csv          # POC: read from uploaded files
+DATA_SOURCE=sap          # Production: poll SAP API
+DATA_SOURCE=servicenow   # Production: ServiceNow integration
+```
+
+### 5.4 Invalid Data Handling
+Bad records don't crash ingestion. Invalid records are:
+1. Quarantined (stored with error details)
+2. Flagged for human review in the Workbench
+3. Logged in the audit trail
+
+### 5.5 Ingestion Results
+Every ingestion run returns a result object:
+```python
+@dataclass
+class IngestionResult:
+    total_records: int
+    ingested: int
+    failed: int
+    quarantined: int
+    errors: list[str]
+    duration_ms: float
+```
+
+# 6. Folder Structure
+```
+app/services/ingestion/
+├── __init__.py              # IngestionAdapter protocol, IngestionResult
+├── base.py                  # BaseAdapter with shared validation logic
+├── adapters/
+│   ├── __init__.py
+│   ├── csv_adapter.py       # CSV and Excel flat files
+│   ├── json_adapter.py      # JSON files and payloads
+│   ├── pdf_adapter.py       # PDF extraction (AI-assisted via services/ai/)
+│   ├── api_adapter.py       # Generic REST API polling
+│   └── webhook_adapter.py   # Webhook event receiver
+├── field_mapping.py         # Schema field mapping engine
+└── quarantine.py            # Invalid record handling
+```
+
+# 7. Creating a New Adapter
+When adding a new data source:
+1. Create `app/services/ingestion/adapters/{source}_adapter.py`
+2. Implement the `IngestionAdapter` protocol
+3. Define `FIELD_MAPPING` for this source
+4. Add `DATA_SOURCE={source}` option to `.env.example`
+5. Register in the adapter factory (`__init__.py`)
+6. Write tests in `tests/test_ingestion_{source}.py`
+7. Document in `docs/memory-bank/decisionLog.md`
+
+# 8. PDF and Document Ingestion
+For document sources (PDFs, images, scanned forms):
+- Use the AI abstraction layer (`app/services/ai/`) for extraction
+- The adapter calls an AI extraction service, which returns structured data
+- The structured data then follows the normal ingestion flow
+- Always store the original document alongside the extracted data

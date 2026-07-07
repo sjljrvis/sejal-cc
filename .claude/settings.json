@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make up)",
+      "Bash(make down)",
+      "Bash(make logs-be)",
+      "Bash(make logs-fe)",
+      "Bash(make lint)",
+      "Bash(make format)",
+      "Bash(make test-be)",
+      "Bash(make migrate-create:*)",
+      "Bash(make migrate-up)",
+      "Bash(make migrate-down)",
+      "Bash(make migrate-history)",
+      "Bash(make reset-db)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm run typecheck)",
+      "Bash(python -m py_compile:*)",
+      "Bash(pytest:*)",
+      "Bash(docker compose ps)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose restart:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}

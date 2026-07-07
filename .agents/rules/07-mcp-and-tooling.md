@@ -1,0 +1,74 @@
+---
+trigger: model_decision
+description: Reference when using MCP servers, development commands, deployment tools, or configuring the environment
+---
+
+# 1. MCP Servers (Optional — Not All May Be Available)
+MCP (Model Context Protocol) servers extend your capabilities. **Not all developers will have all MCPs installed.** Check availability before using, and suggest useful ones the developer should consider.
+
+## Available MCPs in this Template
+These MCPs are used across Supervity projects. If a developer doesn't have one, suggest they install it.
+
+| MCP Server | Purpose | When to Suggest |
+|------------|---------|-----------------|
+| **BigQuery** | Data analysis, SQL queries, forecasting | When working with analytics dashboards, data exploration, or AI training data |
+| **Cloud Run** | Service deployment, logs, management | When deploying to production or debugging live services |
+| **Google Developer Knowledge** | Official Google documentation search | When implementing GCP features (Cloud SQL, IAM, Pub/Sub, Storage) |
+| **Stitch** | UI design generation and iteration | When designing new pages or components — generate mockups before coding |
+| **Aikido** | SAST & Secrets scanning | Before committing security-sensitive code (auth, API integrations, data processing) |
+| **Google Docs** | Document reading and creation | When working with specifications, requirements, or generating documentation |
+
+**If a MCP tool call fails**, it likely means the developer hasn't installed that MCP. Suggest they add it, and use alternative approaches in the meantime.
+
+# 2. BigQuery Usage (if available)
+- Always check table schemas with `get_table_info` before writing queries.
+- Use `mcp_bigquery_execute_sql` for direct SQL queries.
+- Use `mcp_bigquery_ask_data_insights` for analytical questions about table data.
+- Use `mcp_bigquery_forecast` for time-series forecasting.
+- Default project is `otto-to-staging`.
+
+# 3. Cloud Run Deployment (if available)
+- **NEVER** choose a project ID yourself. Always confirm with the user before deploying.
+- Use `mcp_cloudrun_deploy_local_folder` for full project deployments.
+- Use `mcp_cloudrun_get_service_log` to debug production issues.
+- Use `mcp_cloudrun_get_service` to check service status and URLs.
+- Default region is `europe-west1` — confirm with user if different.
+
+# 4. Google Developer Knowledge (if available)
+- Use `mcp_google-developer-knowledge_search_documents` when implementing Google Cloud features (Cloud SQL, GCS, IAM, Pub/Sub, etc.).
+- If search results are insufficient, use `get_documents` to retrieve full document content.
+
+# 5. Aikido Security Scanning (if available)
+- Use `mcp_aikido-mcp_aikido_full_scan` to scan code files for SAST vulnerabilities and secrets.
+- Run before committing sensitive code (API integrations, auth flows, data processing).
+- Maximum 50 files per scan request — split into multiple calls if needed.
+- Provide `repository_name` only for files that belong to a real repository.
+
+# 6. Makefile Commands (PREFERRED over raw Docker)
+Always use `make` commands for standard operations:
+
+| Command | Purpose |
+|---------|---------|
+| `make up` | Start all services (postgres, backend, frontend) |
+| `make down` | Stop all services |
+| `make logs-be` | View backend logs |
+| `make logs-fe` | View frontend logs |
+| `make reset-db` | Clean and re-seed the database |
+| `make format` | Format all code |
+| `make lint` | Lint all code |
+| `make test-be` | Run backend tests |
+| `make migrate-up` | Apply database migrations |
+| `make migrate-create MSG='...'` | Create new Alembic migration |
+| `make migrate-history` | View migration chain |
+| `make migrate-down` | Rollback one migration |
+| `make deploy` | Full production deployment |
+| `make deploy-backend` | Rebuild and redeploy backend only |
+| `make deploy-frontend` | Rebuild and redeploy frontend only |
+| `make deploy-status` | Show deployment status |
+
+# 7. Environment Configuration
+- All env vars are in `.env` (copied from `.env.example`).
+- **Backend vars:** `APP_ENV`, `DATABASE_URL`, `GEMINI_API_KEY`, `AI_MODEL` (default `gemini-3-flash-preview`), `AI_THINKING_LEVEL` (default `medium`), `AI_FALLBACK_MODEL`, `AI_CONCURRENCY_LIMIT`, `STORAGE_BACKEND`.
+- **Frontend vars:** `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BASE_PATH`, `NEXTAUTH_SECRET`.
+- **Auth vars:** `KEYCLOAK_SERVER_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`.
+- Check `.env.example` for the full list and documentation.

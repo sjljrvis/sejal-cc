@@ -1,0 +1,77 @@
+---
+description: AI abstraction layer, prompt engineering, tool/function calling, error handling, AI Policies engine, RuleArchitect conflict checks
+globs: app/services/ai/**,app/services/policies/**,app/services/rule_architect.py
+alwaysApply: false
+---
+
+<!-- ⚠ MIRROR — canonical: .agents/rules/06-gemini-ai-patterns.md. Edit canonical, then run scripts/sync-rules.sh. -->
+
+
+# 1. AI Abstraction Layer (MANDATORY)
+All AI interactions go through `app/services/ai/`. This directory contains:
+- The Gemini API client (wraps `google.genai`)
+- AI Manager / Copilot chat logic
+- Policy translation (natural language → DSL)
+- Tool definitions for function calling
+
+**NEVER** import `google.genai` directly in routers, middleware, or non-AI services. Always go through the abstraction layer so models can be swapped without rewriting business logic.
+
+When creating new AI capabilities for this use case, follow the existing patterns in `app/services/ai/` and add new modules there.
+
+# 2. Model Configuration
+- **Default Model:** Set via `AI_MODEL` env var (currently `gemini-2.5-flash`).
+- **Concurrency:** Respect `AI_CONCURRENCY_LIMIT` (default 18) for parallel AI calls.
+- **API Key:** `GEMINI_API_KEY` env var. Check existence before making calls.
+
+# 3. Prompt Engineering Rules
+- **System Prompts:** Store as named constants or dedicated files — never inline strings scattered across code.
+- **Structured Output:** Use JSON mode wherever possible for predictable parsing.
+- **Few-Shot Examples:** Include for complex tasks (classification, data extraction, entity recognition).
+- **Token Awareness:** Be mindful of input token limits. Truncate or chunk long inputs.
+
+# 4. Tool Calling (Function Calling) Pattern
+Follow the established pattern in `app/services/ai/tools.py`:
+1. **Define tools** with clear JSON schemas (name, description, parameters).
+2. **Pass tool list** to the model alongside the user's message.
+3. **AI decides** which tool to call and with what arguments.
+4. **Backend executes** the chosen function.
+5. **Result sent back** to the AI for generating a human-readable response.
+- Document every new tool with its purpose, parameters, and example usage.
+
+# 5. Error Handling (CRITICAL)
+All AI calls MUST be wrapped in try/except:
+- Handle **rate limits** (429) with exponential backoff.
+- Handle **token limit exceeded** by truncating input and retrying.
+- Handle **malformed responses** with fallback logic.
+- **Log AI inputs/outputs** for debugging — mask any sensitive data (PII, API keys).
+- Never let an AI error crash the API. Return a graceful error message to the frontend.
+
+# 6. AI Policies Engine
+- Rules stored in the `Policies` DB table with JSON `conditions` field.
+- The Rule Evaluator service fetches and evaluates rules against input data.
+- Natural language → DSL translation is a core feature. Use structured output mode for translations.
+- Always validate translated DSL before persisting.
+
+# 7. Background Processing (CRITICAL)
+- **All AI analysis, batch operations, and report generation** must use background tasks.
+- API responses must stay fast (< 2 seconds). If an AI operation takes longer, return a task ID and use WebSocket or polling for progress updates.
+- Use FastAPI's `BackgroundTasks` dependency for async operations. If a dedicated task manager is needed, create it in `app/core/`.
+
+# 8. Policy-First Business Logic (CRITICAL)
+ALL domain decisions MUST go through AI Policies — either as structured DSL (via `RuleEngine`) or natural language (via `PolicyService`). See Rule 10 for the complete enforcement protocol, fallback hierarchy, and anti-pattern detection.
+
+**Mandatory RuleArchitect usage:** When creating any new AI Policy, the `RuleArchitect` service (`app/services/rule_architect.py`) MUST be used to:
+- Check for **conflicts** with existing policies
+- Detect **overrides** (INSTRUCTION rules overriding BASE rules)
+- Generate **clarifications** and **refined instructions**
+
+This is not optional — every policy creation flow must include conflict analysis.
+
+**Policy evaluation points:** Every new domain entity MUST define where in its lifecycle AI Policies should fire:
+- On ingestion (validate/classify)
+- On status change (approval/rejection/escalation)
+- On assignment (routing)
+- On threshold (limits/quotas)
+- On schedule (SLA checks)
+
+Document these in `docs/{use-case}.md`.

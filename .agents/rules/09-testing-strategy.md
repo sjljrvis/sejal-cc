@@ -1,0 +1,100 @@
+---
+trigger: model_decision
+description: Reference when writing tests, setting up test infrastructure, creating fixtures, or validating code changes
+---
+
+# 1. Testing Philosophy
+Tests are **not optional**. Every feature that goes through a commit should have corresponding tests. The goal is confidence, not coverage metrics — test the things that matter.
+
+# 2. What MUST Be Tested
+
+### Backend (Python / pytest)
+- **Every router endpoint** — at least one happy path and one error path per endpoint.
+- **Every service function** with business logic — especially AI service wrappers.
+- **Authorization rules** — verify that protected endpoints reject unauthorized users.
+- **Data validation** — confirm Pydantic schemas reject bad input correctly.
+- **Database operations** — CRUD operations with test fixtures.
+
+### Frontend (TypeScript / Jest or Vitest)
+- **API client functions** — mock responses and verify correct parsing.
+- **Complex components** — components with significant logic (state machines, conditional rendering).
+- **Hooks** — custom hooks that manage state or API calls.
+- **Not required:** Simple presentational components (cards, labels, icons).
+
+# 3. Test File Conventions
+
+### Backend
+- Test files live in `/tests/` mirroring the `app/` structure.
+- Naming: `test_{module_name}.py` (e.g., `tests/test_routers_tickets.py`, `tests/test_services_ai.py`).
+- Use `pytest` with `pytest-asyncio` for async endpoint tests.
+- Use fixtures in `tests/conftest.py` for shared setup (test DB, mock users, API client).
+
+### Frontend
+- Test files live **next to** the component they test: `Component.tsx` → `Component.test.tsx`.
+- Use the testing framework configured in the project (Jest or Vitest).
+
+# 4. Test Patterns
+
+### API Endpoint Test (Backend)
+```python
+import pytest
+from httpx import AsyncClient
+
+@pytest.mark.asyncio
+async def test_create_ticket_success(client: AsyncClient, auth_headers: dict):
+    response = await client.post("/api/tickets", json={
+        "title": "Test ticket",
+        "priority": "high"
+    }, headers=auth_headers)
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["title"] == "Test ticket"
+
+@pytest.mark.asyncio
+async def test_create_ticket_validation_error(client: AsyncClient, auth_headers: dict):
+    response = await client.post("/api/tickets", json={}, headers=auth_headers)
+    assert response.status_code == 422
+```
+
+### AI Service Test (Backend — Mocked)
+```python
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+@patch("app.services.ai.gemini.generate_content")
+async def test_analyze_returns_structured_output(mock_gen: AsyncMock):
+    mock_gen.return_value = '{"category": "billing", "confidence": 0.95}'
+    result = await analyze_ticket(ticket_data)
+    assert result["category"] == "billing"
+    assert result["confidence"] >= 0.9
+```
+
+# 5. Mock & Fixture Rules
+- **Never call real AI APIs in tests.** Always mock `app/services/ai/` methods.
+- **Never call real external services in tests.** Mock all HTTP clients and integrations.
+- **Use factory fixtures** for test data — don't hardcode payloads across multiple tests.
+- **Test DB:** Use a separate test database or in-memory SQLite for speed.
+
+# 6. Pre-Commit Test Requirements
+Before committing, run:
+```bash
+# Backend tests
+make test-be
+
+# Frontend lint + build (catches type errors)
+cd frontend && npm run lint && npm run build
+```
+
+Both must pass. If tests fail, fix them before committing. **Never skip a failing test.**
+
+# 7. When to Write Tests
+- **New endpoint?** Write at least 2 tests (success + error).
+- **New service function?** Write tests covering the main logic paths.
+- **Bug fix?** Write a regression test that fails without your fix and passes with it.
+- **Refactor?** Existing tests should still pass. If they don't, update them to match the new behavior.
+
+# 8. Test Quality Rules
+- Tests must be **independent** — no test should depend on another test's state.
+- Tests must be **deterministic** — no random data, no time-dependent assertions without mocking.
+- Test names must be **descriptive**: `test_create_ticket_with_missing_title_returns_422` not `test_create`.
+- Keep tests **fast**. If a test needs to wait for something, you're probably not mocking correctly.

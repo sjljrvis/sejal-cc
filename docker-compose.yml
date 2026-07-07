@@ -1,0 +1,95 @@
+# docker-compose.yml
+# Simplified: Keycloak runs on Google Cloud Run, only local services here
+
+services:
+  # Local App Database (for app data like items, etc.)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-app_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./app:/app/app
+      - ./utils:/app/utils
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - document_storage:/app/document_storage  # Local file storage
+    ports:
+      - "8001:8000"
+    environment:
+      # Environment mode (from .env, defaults to development)
+      - APP_ENV=${APP_ENV:-development}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/document_storage}
+      - BASE_PATH=${BASE_PATH:-}
+      # AI Configuration (Gemini 3 — see .env.example for valid model IDs)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-gemini-3-flash-preview}
+      - AI_THINKING_LEVEL=${AI_THINKING_LEVEL:-medium}
+      - AI_FALLBACK_MODEL=${AI_FALLBACK_MODEL:-}
+      - AI_CONCURRENCY_LIMIT=${AI_CONCURRENCY_LIMIT:-18}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${FRONTEND_TARGET:-prod}
+      args:
+        # Keycloak is now remote - pass the Cloud Run URL
+        - KEYCLOAK_SERVER_URL=${KEYCLOAK_SERVER_URL}
+        - NEXT_PUBLIC_KEYCLOAK_URL=${NEXT_PUBLIC_KEYCLOAK_URL}
+        - KEYCLOAK_REALM=${KEYCLOAK_REALM}
+        - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
+        - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+        - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE}
+        - NEXTAUTH_URL=${NEXTAUTH_URL}
+        - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_BASE_PATH=${BASE_PATH:-}
+        - SUPERVITY_AUTH_DEBUG=${SUPERVITY_AUTH_DEBUG}
+    ports:
+      - "3001:3000"
+    environment:
+      # Environment mode (from .env)
+      - NODE_ENV=${NODE_ENV:-development}
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  document_storage:  # Local file storage for development
+
+networks:
+  app-network:
+    driver: bridge

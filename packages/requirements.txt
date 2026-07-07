@@ -1,0 +1,39 @@
+# packages/requirements.txt
+# Core Application Dependencies
+fastapi
+uvicorn
+gunicorn
+gitingest
+python-jose[cryptography]
+requests
+httpx
+geoip2
+python-multipart
+email-validator
+openpyxl  # Excel export for audit logs
+
+# Pin cryptography away from v48+. The 48.0.0 (May 2026) prebuilt
+# manylinux_2_34_aarch64 wheel uses ARM instructions that crash with SIGILL
+# on Docker Desktop's Linux VM under Apple Silicon. v46.x imports cleanly.
+# Transitively required by python-jose[cryptography] → google.genai →
+# google.auth → cryptography. Bump only after verifying on an M-series Mac.
+cryptography>=44,<47
+
+# Cloud Storage
+google-cloud-storage
+
+# AI / Gemini Integration
+# >=1.51.0 required for Gemini 3 features (thinking_config, thought_signatures,
+# media_resolution). Older versions silently ignore these fields.
+google-genai>=1.51.0
+
+# --- Development & Code Quality Tools ---
+black
+isort
+flake8
+pytest
+pytest-asyncio
+python-json-logger
+sqlalchemy
+psycopg2-binary
+alembic

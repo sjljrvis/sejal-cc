@@ -1,0 +1,79 @@
+---
+trigger: always_on
+---
+
+# 1. The First Rule: Don't Commit Secrets
+Real secrets — API keys, OAuth client secrets, DB passwords, JWT signing keys, service account JSONs — go in `.env` (which is gitignored). They never appear in:
+- Tracked source files (`.py`, `.ts`, `.tsx`, etc.)
+- **`scripts/` of any kind** — test, seed, demo, or one-off scripts. If a script needs a key, read `os.environ["GEMINI_API_KEY"]` and exit non-zero with a clear message when it's missing. (Past incident: a real key was hardcoded in `scripts/test_ai.py` and committed.)
+- Migration files or seed data
+- `docker-compose.yml`, `Dockerfile`
+- `.env.example` (placeholders only — never real values)
+- Test fixtures
+- Logs, error messages, or stack traces returned to users
+- Memory bank files (`docs/memory-bank/`)
+- AI prompt strings or prompt logs
+
+If you find a secret in any of those places, **stop, surface it to the user, and remove it before continuing.** Do not try to scrub it from history yourself — that's a human decision (force-pushing rewrites is destructive).
+
+# 2. Required Secrets Hygiene Per File Type
+
+| File | What's allowed | What's forbidden |
+|---|---|---|
+| `.env` | Real secrets | Should be in `.gitignore` (already is) |
+| `.env.example` | Placeholder values, key names, comments | Real secrets, real URLs to internal infra |
+| `docker-compose.yml` | `${VAR_NAME}` references | Inline secret values |
+| Source code | `os.getenv("VAR")` reads | Hardcoded keys, URLs to internal services, tokens |
+| Tests | Mock values, fake tokens (`"test-key-xxx"`) | Real keys, even rotated/expired ones |
+| Logs / error responses | `key=***` masked | Raw keys, full tokens, full session IDs |
+
+# 3. Reading Secrets Correctly
+- Backend: `os.getenv("KEY")` (or `pydantic-settings` if the project adopts it). Never `os.environ["KEY"]` without a default — fail loudly at app startup, not deep in a request handler.
+- Frontend: only `NEXT_PUBLIC_*` vars are exposed to the browser. Never put a server secret behind `NEXT_PUBLIC_` — it ships to every user.
+- Validate at boot: if `GEMINI_API_KEY` is missing, log a clear error and refuse to start the affected service. Don't degrade silently.
+
+# 4. Auth & Session Discipline
+- Session tokens, refresh tokens, and Keycloak admin credentials never appear in client-side code or in URLs (use POST body or auth headers).
+- Authorization headers must be redacted in any structured log statement (Rule 15).
+- When adding a new endpoint, the authz rule in `app/authz.map.json` is mandatory (Rule 12 §3) — there is no "I'll add it later".
+- Rotate secrets in `.env` if a developer leaves the team or a laptop is lost. Document the rotation in `docs/memory-bank/decisionLog.md`.
+
+# 5. PII & Sensitive Data Handling
+- **Never send PII to the AI without redacting it first** unless the use case explicitly requires it AND the user has been informed. Common PII: names, emails, phone numbers, SSNs, addresses, salary figures, government IDs, medical info.
+- AI inputs and outputs are logged for debugging (Rule 06 §5). The logger must mask PII fields by name (e.g., `email`, `phone`, `ssn`, `date_of_birth`).
+- When ingesting data (Rule 11), document which fields are PII in the use-case doc (`docs/{use-case}.md`) and ensure the ingestion adapter or downstream service applies redaction.
+
+# 6. Dependency & Supply Chain Hygiene
+- Don't add a new Python or npm dependency casually. Each one is an attack surface.
+- Before adding a dependency:
+  1. Check that it's actively maintained (last commit < 12 months, open issues are answered).
+  2. Check that it has a sane number of transitive dependencies — a 3-line utility shouldn't pull in 40 packages.
+  3. Prefer well-known, broadly-adopted libraries.
+- Never install a package via `npm install` from an unfamiliar source. Stick to the public registries.
+- After adding, commit the lockfile (`package-lock.json`, `poetry.lock` or equivalent) in the same commit.
+
+# 7. Input Validation & OWASP-Aware Coding
+At system boundaries (API endpoints, ingestion adapters, file uploads, query params), assume input is hostile:
+- **SQL injection:** Always use ORM parameter binding (SQLAlchemy `select(...).where(Model.field == value)`). Never build SQL by string-concatenating user input.
+- **XSS:** React escapes by default — but `dangerouslySetInnerHTML` requires explicit user input sanitization (use a library, e.g., `dompurify`).
+- **SSRF:** When the backend fetches a URL on the user's behalf, validate the host. Block `localhost`, `169.254.*`, `10.*`, `172.16-31.*`, `192.168.*` unless the use case explicitly allows it.
+- **Path traversal:** When accepting file paths or names, normalize and verify the result stays within the allowed directory.
+- **File uploads:** Validate MIME type, size (cap at a sane upper bound), and run through the ingestion adapter — never write directly to disk from a router.
+- **Rate limiting:** Sensitive endpoints (auth, AI invocation, expensive queries) need rate limits. Add them at the gateway or in middleware.
+
+# 8. AI-Specific Threats
+- **Prompt injection:** Treat any user-supplied text that ends up inside an AI prompt as untrusted. Wrap it clearly (`<user_input>...</user_input>`) and instruct the model that content inside the wrapper is data, not instructions.
+- **Tool-call abuse:** When the AI can call internal tools (Rule 06 §4), the tool implementations must enforce authz themselves — never trust the AI's claim to be acting on behalf of a privileged user.
+- **Output handling:** Never `eval()` AI output. Never construct shell commands from AI output. JSON-parse and validate against a schema before using it.
+
+# 9. Pre-Commit Security Self-Check
+Before every commit:
+- [ ] No real secrets in any tracked file (run `git diff --cached` and skim)
+- [ ] `.env.example` has placeholders only
+- [ ] Any new endpoint has an authz rule (Rule 12 §3)
+- [ ] Any new dependency was vetted (§6)
+- [ ] Any user-input concatenation has been replaced with parameterized queries / sanitization
+- [ ] Any new AI prompt that includes user input wraps it as untrusted data (§8)
+- [ ] No PII makes it into logs unmasked (Rule 15)
+
+If any of these are no, fix before committing.

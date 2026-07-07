@@ -1,0 +1,20 @@
+# Decision Log
+
+A running record of architectural decisions, scope decisions, and non-obvious tradeoffs. Append-only — never rewrite history. Future-you (and every other agent) reads this to understand why the codebase looks the way it does.
+
+When to add an entry:
+- Picking a new library or framework
+- Choosing one architectural pattern over another (e.g., why Strategy instead of Policy in this rare case — see Rule 10 §2)
+- Removing demo content during use-case onboarding (see Rule 05 §5 Step 2)
+- Migrating from POC to production data source (Rule 11)
+- Any decision that would surprise a reader six months from now
+
+Format:
+
+| Date | Decision | Rationale | Alternatives Considered |
+|------|----------|-----------|------------------------|
+| 2026-05-08 | Pinned `cryptography>=44,<47` explicitly in `packages/requirements.txt` (was transitive via `python-jose[cryptography]`, unbounded). | The `cryptography 48.0.0` (May 4 2026) prebuilt manylinux_2_34_aarch64 wheel uses ARM instructions that crash with SIGILL on Docker Desktop's Linux VM under Apple Silicon. Every gunicorn worker died on `import` because the chain `python-jose → google.genai → google.auth → cryptography` loads it on app boot. v46.x imports cleanly; downstream Employee project verified. | (a) Wait for upstream fix — rejected, blocks all M-series devs today. (b) Pin to a single version (`==46.0.4`) — rejected, denies routine patch updates inside the safe range. (c) Bump only after testing v47 — deferred; v47 not validated, conservative bound matches what works. |
+| 2026-05-08 | Bumped `next` and `eslint-config-next` from `15.5.11` → `15.5.18`. | (1) 15.5.18 (May 7 2026) ships fixes for DoS, middleware/proxy bypass, XSS, and cache-poisoning advisories — security patches we shouldn't ride 15.5.11 past. (2) The lockfile drift between `next@15.5.11` and `@next/swc-*@15.5.7` (cause of the npm warning) only re-resolves cleanly on a coherent `next` version bump, since the `@next/swc-*` optionalDependencies are pinned to the parent `next` version. | (a) Just `npm install` to silence the warning — rejected, leaves us on 15.5.11 with known CVEs. (b) Move to Next 16 — rejected, larger migration; not in scope for a hotfix. |
+| 2026-05-07 | Migrated all AI calls from Gemini 2.x to Gemini 3 (`gemini-3-flash-preview` default, `>=1.51.0` SDK floor). Introduced `AI_THINKING_LEVEL` env var; removed all explicit `temperature` settings; refactored `RuleArchitect` and `PromptOptimizer` to subclass `GeminiService`; added `thought_signature`-aware error handling in chat. | (1) Gemini 2.5/2.0 deprecated — `gemini-2.0-flash*` shuts down 2026-06-01. (2) Gemini 3 introduces `thinking_config` (replacing `thinking_budget`) and strict `thought_signature` validation on tool-calling turns; the docs explicitly warn against setting `temperature` to low values, which our 2.x code did everywhere (0.1–0.3). (3) Single source of truth for client init avoids drift (the 2.x code defaulted to `gemini-2.0-flash` in code while `.env.example` advertised `gemini-2.5-flash`). | (a) Stay on `gemini-2.5-flash` indefinitely — rejected, deprecated and missing reasoning gains. (b) Jump straight to `gemini-3.1-pro-preview` — rejected, ~10× cost for chat/translation workloads. (c) Use only `gemini-3.1-flash-lite` (GA stable) — rejected, thinking ceiling lower than `gemini-3-flash-preview` for our RuleArchitect path. Keeping it as the documented `AI_FALLBACK_MODEL` candidate. |
+| 2026-05-07 | Removed hardcoded `GEMINI_API_KEY` literal from `scripts/test_ai.py`. Added `Rule 13 §1` clause forbidding API keys in any `scripts/` file. | A real key was committed in plain text. Script now reads from env and fails fast with a clear message. The git history rewrite to scrub the literal is being handled in a separate, explicitly-confirmed step because force-pushing rewrites is destructive (Rule 13 §1 already says this is a human decision). | (a) Leave the key, just rotate — rejected, leak persists in mirrors/clones. (b) Scrub silently — rejected, force-pushing without a paper trail violates Rule 04 §3. |
+

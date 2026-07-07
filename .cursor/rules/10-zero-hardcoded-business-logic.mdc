@@ -1,0 +1,105 @@
+---
+description: The Iron Law — all business decisions must go through AI Policies. Fallback hierarchy, anti-patterns, policy hooks
+alwaysApply: true
+---
+
+<!-- ⚠ MIRROR — canonical: .agents/rules/10-zero-hardcoded-business-logic.md. Edit canonical, then run scripts/sync-rules.sh. -->
+
+
+# 1. The Iron Law: No Coded Business Logic
+**ALL business decisions MUST go through AI Policies** — either as structured DSL evaluated by the `RuleEngine`, or as natural language interpreted by the AI via the `PolicyService`.
+
+**If you catch a developer writing domain-specific conditionals** (e.g., `if amount > 1000`, `if status == "approved"`, `if category in [...]`) **in a router or service file, you MUST stop them immediately** and redirect to creating an AI Policy.
+
+Explain WHY:
+- Coded logic **can't** be changed by operators without a developer.
+- Coded logic **can't** be audited by the AI insights system.
+- Coded logic **breaks** the learning loop (the system never learns from hardcoded rules).
+- Coded logic **can't** be tested with Policy Regression when switching data sources.
+
+# 2. The Fallback Hierarchy
+When policies genuinely cannot handle a requirement, use this hierarchy:
+
+| Priority | Mechanism | Location | When to Use |
+|----------|-----------|----------|-------------|
+| **1st** | AI Policy (DSL or NL) | `Policies` table via `/ai/policies` | Always try first — thresholds, routing, categorization, approvals, flags |
+| **2nd** | Config / Settings | `Settings` model or `config/` files | Business parameters that change per deployment — tolerance %, approved lists, SLA windows |
+| **3rd** | Strategy Pattern | `app/services/strategies/` | Last resort — complex multi-step orchestration, composite algorithms |
+
+**If using fallback #3 (Strategy):** You MUST:
+1. Create an entry in `docs/memory-bank/decisionLog.md` explaining why policies can't handle it.
+2. Add a `# STRATEGY EXCEPTION:` comment at the top of the file explaining the rationale.
+3. Keep the strategy isolated — it must not leak into routers or other services.
+
+# 3. What IS Allowed in Code
+These are infrastructure concerns, not business logic:
+
+- ✅ Data fetching, database CRUD
+- ✅ Pydantic schema validation (shape of data, required fields, type checks)
+- ✅ Authentication and authorization checks (via `authz.py`)
+- ✅ API routing, response formatting, error handling
+- ✅ Background task orchestration (but NOT the decision logic inside tasks)
+- ✅ Calling the policy engine / rule engine to evaluate records
+
+# 4. What MUST Be a Policy
+These are business decisions:
+
+- ❌ Approval thresholds ("if amount > $10K, require VP approval")
+- ❌ Routing decisions ("if ticket mentions VPN, route to Network Team")
+- ❌ Categorization/classification ("if vendor is international, flag for compliance")
+- ❌ SLA rules ("if resolution time > 4 hours, escalate")
+- ❌ Pricing/discount logic ("if order > 100 units, apply 15% discount")
+- ❌ Status transitions ("if all checks pass, auto-approve")
+- ❌ Prioritization ("if customer is enterprise tier, set priority high")
+
+# 5. Detection Anti-Patterns
+When you see code like this, STOP and redirect:
+
+```python
+# ❌ BAD: Business logic hardcoded in service
+def process_invoice(invoice):
+    if invoice.amount > 10000:
+        invoice.status = "needs_approval"
+    elif invoice.vendor_status == "preferred":
+        invoice.status = "auto_approved"
+
+# ✅ GOOD: Delegate to policy engine
+async def process_invoice(invoice):
+    result = rule_engine.apply_policies(invoice.to_dict(), active_policies)
+    invoice.status = result.modified_fields.get("status", "pending")
+```
+
+```python
+# ❌ BAD: Hardcoded routing logic
+def route_ticket(ticket):
+    if "vpn" in ticket.description.lower():
+        ticket.team = "network"
+    elif "password" in ticket.description.lower():
+        ticket.team = "identity"
+
+# ✅ GOOD: Policy handles routing
+async def route_ticket(ticket):
+    result = rule_engine.apply_policies(ticket.to_dict(), routing_policies)
+    ticket.team = result.modified_fields.get("team", "general")
+```
+
+```python
+# ❌ BAD: Hardcoded config values
+APPROVAL_THRESHOLD = 5000
+PREFERRED_VENDORS = ["Acme Corp", "TechSupply"]
+
+# ✅ GOOD: Config from Settings model or env
+settings = await get_settings(db)
+threshold = settings.get("approval_threshold", 5000)
+```
+
+# 6. Policy Hooks
+Every domain entity MUST define its **policy evaluation points** — the moments in its lifecycle where AI Policies should fire:
+
+- **On ingestion:** Validate and classify incoming data
+- **On status change:** Evaluate approval/rejection/escalation rules
+- **On assignment:** Route to the right team/person
+- **On threshold:** Check limits, quotas, budgets
+- **On schedule:** Periodic batch evaluation (SLA checks, aging analysis)
+
+Document these hooks in the use case documentation (`docs/{use-case}.md`).
