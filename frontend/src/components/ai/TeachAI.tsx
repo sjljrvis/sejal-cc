@@ -48,7 +48,7 @@ export function TeachAI({
   
   const handleOpenModal = () => {
     // Generate a unique code for the feedback rule
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/\D/g, '')
     
     setPrefilledData({
       name: contextId 
