@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Login Events Page
+ * Audit Events Page
  * 
  * Allows admins to view login events and security monitoring.
  */
@@ -139,13 +139,13 @@ export default function EventsPage() {
         <span>/</span>
         <span>Admin</span>
         <span>/</span>
-        <span className='text-gray-900 font-medium'>Login Events</span>
+        <span className='text-gray-900 font-medium'>Audit Events</span>
       </div>
 
       {/* Header */}
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-semibold text-gray-900'>Login Events</h1>
+          <h1 className='text-2xl font-semibold text-gray-900'>Audit Events</h1>
           <p className='text-gray-500 mt-1'>
             Security monitoring and login activity
           </p>

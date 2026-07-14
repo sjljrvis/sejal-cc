@@ -79,7 +79,7 @@ const navItems: NavSection[] = [
       { href: '/admin/roles', label: 'Role Management', icon: Icons.shield, adminOnly: true },
       { href: '/admin/groups', label: 'Group Management', icon: Icons.network, adminOnly: true },
       { href: '/admin/sessions', label: 'User Sessions', icon: Icons.device, adminOnly: true },
-      { href: '/admin/events', label: 'Login Events', icon: Icons.activity, adminOnly: true },
+      { href: '/admin/events', label: 'Audit Events', icon: Icons.activity, adminOnly: true },
       { href: '/admin/audit', label: 'Audit Logs', icon: Icons.fileText, adminOnly: true },
       { href: '/admin/settings', label: 'Admin Settings', icon: Icons.settings, adminOnly: true },
     ],

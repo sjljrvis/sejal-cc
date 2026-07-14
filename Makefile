@@ -1,5 +1,10 @@
 # Makefile
-.PHONY: help up down logs-be logs-fe reset-db migrate-create migrate-up migrate-down migrate-history format lint test-be sync-rules cloud-build cloud-push cloud-build-push cloud-deploy deploy deploy-setup deploy-build deploy-status deploy-backend deploy-frontend
+.PHONY: help \
+	docker docker-down up down logs-be logs-fe reset-db \
+	local local-setup local-env local-be local-fe local-migrate local-stop \
+	migrate-create migrate-up migrate-down migrate-history format lint test-be sync-rules \
+	cloud-build cloud-push cloud-build-push cloud-deploy \
+	deploy deploy-setup deploy-build deploy-status deploy-backend deploy-frontend
 
 # Configuration (override with environment variables)
 GCP_PROJECT ?= fde-rnd
@@ -8,39 +13,62 @@ ARTIFACT_REPO ?= template-deployment
 KEYCLOAK_IMAGE ?= us-central1-docker.pkg.dev/$(GCP_PROJECT)/$(ARTIFACT_REPO)/keycloak
 KEYCLOAK_VERSION ?= v2
 
+# Local (native, non-Docker) development configuration
+VENV ?= .venv
+LOCAL_BE_PORT ?= 8001
+LOCAL_FE_PORT ?= 3000
+LOCAL_DB_HOST ?= localhost
+
 help:
 	@echo "╔════════════════════════════════════════════════════════════════════╗"
 	@echo "║              AI COMMAND CENTER - MAKEFILE COMMANDS                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "Local Development Commands:"
-	@echo "  up          : Start all services using docker-compose."
-	@echo "  down        : Stop all services."
-	@echo "  logs-be     : View real-time logs for the backend."
-	@echo "  logs-fe     : View real-time logs for the frontend."
-	@echo "  reset-db    : Clean and re-initialize the database with sample data."
-	@echo "  format      : Automatically format all backend and frontend code."
-	@echo "  lint        : Lint all backend and frontend code for issues."
-	@echo "  test-be     : Run backend tests with pytest."
-	@echo "  sync-rules  : Regenerate .cursor/rules/ mirror from canonical .agents/rules/."
+	@echo "This project runs in 3 modes:  docker  |  local  |  cloud"
 	@echo ""
-	@echo "Database Migration Commands:"
-	@echo "  migrate-create MSG='description' : Create a new migration with auto-generated changes."
-	@echo "  migrate-up     : Apply all pending migrations to the database."
-	@echo "  migrate-down   : Downgrade the database by one migration."
-	@echo "  migrate-history: Show migration history."
+	@echo "── DOCKER MODE (docker-compose) ─────────────────────────────────────"
+	@echo "  docker | up        : Start all services (postgres, backend, frontend)."
+	@echo "  docker-down | down : Stop all docker-compose services."
+	@echo "  logs-be            : Tail backend container logs."
+	@echo "  logs-fe            : Tail frontend container logs."
+	@echo "  reset-db           : Clean and re-seed the DB (in the running container)."
 	@echo ""
-	@echo "Production Deployment Commands (Google Cloud Run):"
-	@echo "  deploy         : Full deployment (setup + build + deploy) - first time"
-	@echo "  deploy-setup   : Initial GCP setup (APIs, Cloud SQL, secrets)"
-	@echo "  deploy-build   : Build and push Docker images"
-	@echo "  deploy-backend : Rebuild and redeploy backend only"
-	@echo "  deploy-frontend: Rebuild and redeploy frontend only"
-	@echo "  deploy-status  : Show deployment status"
+	@echo "── LOCAL MODE (native: Next.js + Python API, no Docker) ─────────────"
+	@echo "  local-setup        : One-time setup: venv + pip install, npm install, .env.local."
+	@echo "  local              : Run backend (uvicorn) AND frontend (next dev) together."
+	@echo "  local-be           : Run only the FastAPI backend on port $(LOCAL_BE_PORT)."
+	@echo "  local-fe           : Run only the Next.js frontend on port $(LOCAL_FE_PORT)."
+	@echo "  local-migrate      : Apply Alembic migrations to your local database."
+	@echo "  local-stop         : Stop locally-running backend/frontend processes."
+	@echo "                       (Requires a local PostgreSQL reachable at $(LOCAL_DB_HOST).)"
 	@echo ""
-	@echo "Keycloak Commands (shared instance):"
-	@echo "  cloud-build   : Build Keycloak Docker image for Cloud Run."
-	@echo "  cloud-push    : Push Keycloak image to Artifact Registry."
+	@echo "── CLOUD MODE (Google Cloud Run) ────────────────────────────────────"
+	@echo "  deploy             : Full production deployment (setup + build + deploy)."
+	@echo "  deploy-setup       : Initial GCP setup (APIs, Cloud SQL, secrets)."
+	@echo "  deploy-build       : Build and push Docker images."
+	@echo "  deploy-backend     : Rebuild and redeploy backend only."
+	@echo "  deploy-frontend    : Rebuild and redeploy frontend only."
+	@echo "  deploy-status      : Show deployment status."
+	@echo "  cloud-deploy       : Print the Keycloak Cloud Run deploy command."
+	@echo "  cloud-build        : Build Keycloak image for Cloud Run."
+	@echo "  cloud-push         : Push Keycloak image to Artifact Registry."
+	@echo ""
+	@echo "── SHARED (any mode) ────────────────────────────────────────────────"
+	@echo "  migrate-create MSG='description' : Create a new Alembic migration (docker)."
+	@echo "  migrate-up / migrate-down / migrate-history : Manage migrations (docker)."
+	@echo "  format             : Format backend + frontend code."
+	@echo "  lint               : Lint backend + frontend code."
+	@echo "  test-be            : Run backend tests with pytest (docker)."
+	@echo "  sync-rules         : Regenerate .cursor/rules/ mirror from .agents/rules/."
+
+# ============================================================
+# DOCKER MODE (docker-compose)
+# ============================================================
+
+# Alias so all three modes have a memorable entry point: docker / local / deploy
+docker: up
+
+docker-down: down
 
 up:
 	@echo "🚀 Starting all Supervity services..."
@@ -112,6 +140,75 @@ sync-rules:
 	@echo "🔁 Syncing .cursor/rules/ from canonical .agents/rules/..."
 	@bash scripts/sync-rules.sh
 	@echo "✅ Rule mirror up to date. Commit any changes."
+
+# ============================================================
+# LOCAL MODE (native: Next.js + Python API, no Docker)
+# ============================================================
+# Runs the FastAPI backend via uvicorn and the Next.js frontend via `next dev`
+# directly on the host. Reads config from .env but overrides the DB host to
+# $(LOCAL_DB_HOST) since the `postgres` docker hostname is not resolvable here.
+# Requires a PostgreSQL instance reachable at $(LOCAL_DB_HOST):5432.
+
+local-setup:
+	@echo "🧰 Setting up local (non-Docker) dev environment..."
+	@echo "🐍 Creating Python venv ($(VENV)) and installing backend deps..."
+	python3 -m venv $(VENV)
+	. $(VENV)/bin/activate && pip install --upgrade pip && pip install -r packages/requirements.txt
+	@echo "📦 Installing frontend deps..."
+	cd frontend && npm install
+	@$(MAKE) local-env
+	@echo "✅ Local setup complete! Run 'make local' to start both servers."
+
+local-env:
+	@if [ ! -f .env ]; then \
+		echo "📄 No .env found — copying from .env.example..."; \
+		cp .env.example .env; \
+		echo "✅ Created .env (review it and set secrets before running)."; \
+	else \
+		echo "ℹ️  .env already exists — leaving it untouched."; \
+	fi
+	@if [ ! -f frontend/.env.local ]; then \
+		echo "📄 No frontend/.env.local found — copying from frontend/.env.local.example..."; \
+		cp frontend/.env.local.example frontend/.env.local; \
+		echo "✅ Created frontend/.env.local (set NEXTAUTH_SECRET before running)."; \
+	else \
+		echo "ℹ️  frontend/.env.local already exists — leaving it untouched."; \
+	fi
+
+local-be: local-env
+	@echo "🐍 Starting FastAPI backend on http://localhost:$(LOCAL_BE_PORT) ..."
+	@set -a; . ./.env; set +a; \
+	export POSTGRES_HOST=$(LOCAL_DB_HOST); \
+	export DATABASE_URL="postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$(LOCAL_DB_HOST):$${POSTGRES_PORT}/$${POSTGRES_DB}"; \
+	export LOCAL_STORAGE_PATH="$$PWD/document_storage"; \
+	mkdir -p "$$LOCAL_STORAGE_PATH"; \
+	. $(VENV)/bin/activate; \
+	uvicorn app.main:app --reload --host 0.0.0.0 --port $(LOCAL_BE_PORT)
+
+local-fe: local-env
+	@echo "⚛️  Starting Next.js frontend on http://localhost:$(LOCAL_FE_PORT) ..."
+	cd frontend && npm run dev -- --port $(LOCAL_FE_PORT)
+
+local: local-env
+	@echo "🚀 Starting backend + frontend locally (Ctrl+C stops both)..."
+	@trap 'kill 0' INT TERM EXIT; \
+	$(MAKE) local-be & \
+	$(MAKE) local-fe & \
+	wait
+
+local-migrate: local-env
+	@echo "⬆️  Applying migrations to local database ($(LOCAL_DB_HOST))..."
+	@set -a; . ./.env; set +a; \
+	export DATABASE_URL="postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$(LOCAL_DB_HOST):$${POSTGRES_PORT}/$${POSTGRES_DB}"; \
+	. $(VENV)/bin/activate; \
+	alembic upgrade head
+	@echo "✅ Local migrations applied!"
+
+local-stop:
+	@echo "🛑 Stopping locally-running backend/frontend..."
+	-@pkill -f "uvicorn app.main:app" 2>/dev/null || true
+	-@pkill -f "next dev" 2>/dev/null || true
+	@echo "✅ Stopped (if they were running)."
 
 # ============================================================
 # Cloud Deployment Commands (Keycloak on Google Cloud Run)
